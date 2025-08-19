@@ -34,6 +34,7 @@ const PlayerScreen: React.FC = () => {
 
     const fetchShowDetails = async () => {
         try {
+            console.log('show.id =', show.id)
             const response = await fetch(
                 `https://services.err.ee/api/v2/radioAppContent/getContentPageData?contentId=${show.id}`
             );
@@ -180,6 +181,122 @@ const PlayerScreen: React.FC = () => {
         );
     }
 
+    // Проверка на ошибки аудио
+    if (state.error) {
+        return (
+            <View style={styles.errorContainer}>
+                <Text style={styles.errorText}>{state.error}</Text>
+                <TouchableOpacity
+                    style={styles.retryButton}
+                    onPress={() => {
+                        // Повторная попытка загрузки эпизода
+                        if (showDetails && showDetails.episodeList && showDetails.episodeList.length > 0) {
+                            const playableEpisode = showDetails.episodeList.find(episode =>
+                                (episode.medias && episode.medias.length > 0) ||
+                                (episode.clips && episode.clips.length > 0)
+                            );
+                            if (playableEpisode) {
+                                playEpisode(playableEpisode, showDetails);
+                            }
+                        }
+                    }}
+                >
+                    <Text style={styles.retryButtonText}>Повторить</Text>
+                </TouchableOpacity>
+            </View>
+        );
+    }
+
+    /**
+     * Декодирует Unicode escape последовательности (например, \u003C в <)
+     */
+    const decodeUnicodeEscapes = (str: string): string => {
+        if (!str) return '';
+
+        return str.replace(/\\u([0-9a-fA-F]{4})/g, (match, code) => {
+            return String.fromCharCode(parseInt(code, 16));
+        });
+    };
+
+    /**
+     * Декодирует HTML entities (например, &lt; в <, &amp; в &)
+     */
+    const decodeHtmlEntities = (str: string): string => {
+        if (!str) return '';
+
+        const htmlEntities: { [key: string]: string } = {
+            '&amp;': '&',
+            '&lt;': '<',
+            '&gt;': '>',
+            '&quot;': '"',
+            '&#039;': "'",
+            '&#x27;': "'",
+            '&apos;': "'",
+            '&nbsp;': ' ',
+            '&copy;': '©',
+            '&reg;': '®',
+            '&trade;': '™',
+            '&hellip;': '...',
+            '&mdash;': '—',
+            '&ndash;': '–',
+            '&laquo;': '«',
+            '&raquo;': '»',
+            '&bull;': '•'
+        };
+
+        return str.replace(/&[a-zA-Z0-9#]+;/g, (entity) => {
+            return htmlEntities[entity] || entity;
+        });
+    };
+
+    /**
+     * Удаляет HTML теги и оставляет только текстовое содержимое
+     */
+    const stripHtmlTags = (str: string): string => {
+        if (!str) return '';
+
+        return str
+        // Удаляем HTML теги, но сохраняем их содержимое
+            .replace(/<[^>]+>/g, '')
+            // Заменяем множественные пробелы на одинарные
+            .replace(/\s+/g, ' ')
+            // Убираем пробелы в начале и конце
+            .trim();
+    };
+
+    /**
+     * Полная очистка и декодирование HTML строки
+     */
+    const cleanHtmlText = (str: string): string => {
+        if (!str || typeof str !== 'string') return '';
+
+        // Шаг 1: Декодируем Unicode escape последовательности
+        let cleaned = decodeUnicodeEscapes(str);
+
+        // Шаг 2: Декодируем HTML entities
+        cleaned = decodeHtmlEntities(cleaned);
+
+        // Шаг 3: Удаляем HTML теги
+        cleaned = stripHtmlTags(cleaned);
+
+        return cleaned;
+    };
+
+    /**
+     * Получает очищенное описание из объекта передачи
+     */
+    const getCleanDescription = (show: any): string | null => {
+        if (!show) return null;
+
+        const lead = show.lead ? cleanHtmlText(show.lead) : '';
+        const body = show.body ? cleanHtmlText(show.body) : '';
+
+        // Возвращаем lead, если он не пустой, иначе body
+        const description = lead || body;
+
+        return description && description.trim() !== '' ? description : null;
+    };
+
     const currentShow = showDetails.mainContent
     const currentEpisode = state.currentEpisode || showDetails.episodeList[0];
 
@@ -232,13 +349,16 @@ const PlayerScreen: React.FC = () => {
                 </TouchableOpacity>
 
                 {/* Описание */}
-                {(currentShow.lead || currentShow.body) && (
-                    <View style={styles.descriptionContainer}>
-                        <Text style={styles.descriptionText}>
-                            {currentShow.lead || currentShow.body}
-                        </Text>
-                    </View>
-                )}
+                {(() => {
+                    const description = getCleanDescription(currentShow);
+                    return description ? (
+                        <View style={styles.descriptionContainer}>
+                            <Text style={styles.descriptionText}>
+                                {description}
+                            </Text>
+                        </View>
+                    ) : null;
+                })()}
 
                 {/* Дата */}
                 <Text style={styles.dateText}>
@@ -355,6 +475,18 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: '#666',
         fontStyle: 'italic',
+    },
+    retryButton: {
+        backgroundColor: '#0066cc',
+        paddingHorizontal: 24,
+        paddingVertical: 12,
+        borderRadius: 8,
+        marginTop: 16,
+    },
+    retryButtonText: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: '600',
     },
 });
 

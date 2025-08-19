@@ -27,6 +27,9 @@ export interface Episode {
         photoTypes: {
             36: {
                 url: string;
+            },
+            4: {
+                url: string;
             };
         };
     };
@@ -53,4 +56,5 @@ export interface AudioState {
     currentEpisode: Episode | null;
     isLoading: boolean;
     showDetails: any | null;
+    error: string | null; // Добавьте это поле
 }
