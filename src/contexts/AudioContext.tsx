@@ -5,8 +5,6 @@ import { AudioState, Episode } from '../types';
 import { StorageService } from '../services/StorageService';
 import { NotificationService } from '../services/NotificationService';
 
-console.log('AudioContext загружается...');
-
 interface AudioContextType {
     state: AudioState;
     playEpisode: (episode: Episode) => Promise<void>;
@@ -54,9 +52,6 @@ const initialState: AudioState = {
     isLoading: false,
     showDetails: null,
 };
-
-// В AudioContext.tsx
-console.log('AudioContext загружается...');
 
 export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [state, dispatch] = useReducer(audioReducer, initialState);

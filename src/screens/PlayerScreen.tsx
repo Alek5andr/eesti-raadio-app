@@ -22,24 +22,15 @@ const { width } = Dimensions.get('window');
 const imageSize = width * 0.6;
 
 const PlayerScreen: React.FC = () => {
-    try {
-        const { state, playEpisode, togglePlayPause, seekTo, setShowDetails } = useAudio();
-    } catch (error) {
-        console.error('Ошибка в useAudio:', error);
-    }
-
     const route = useRoute<PlayerScreenRouteProp>();
     const { show } = route.params;
-    //const { state, playEpisode, togglePlayPause, seekTo } = useAudio();
+    const { state, playEpisode, togglePlayPause, seekTo, setShowDetails: setAudioShowDetails } = useAudio();
     const [showDetails, setShowDetails] = useState<ShowDetails | null>(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         fetchShowDetails();
     }, [show.id]);
-
-    // Также обновите деструктуризацию useAudio:
-    const { state, playEpisode, togglePlayPause, seekTo, setShowDetails: setAudioShowDetails } = useAudio();
 
     const fetchShowDetails = async () => {
         try {
