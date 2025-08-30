@@ -60,7 +60,7 @@ export default function App() {
                     <Stack.Screen
                         name="Player"
                         component={PlayerScreen}
-                        options={{ title: 'Плеер' }}
+                        options={{ title: 'Player' }}
                     />
                 </Stack.Navigator>
                 <StatusBar style="light" />
