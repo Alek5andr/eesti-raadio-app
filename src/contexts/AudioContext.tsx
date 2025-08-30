@@ -456,10 +456,24 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const togglePlayPause = async () => {
         try {
-            if (state.isPlaying) {
+            if (!soundRef.current) {
+                console.warn('Звуковой объект не инициализирован');
+                return;
+            }
+
+            // Получаем актуальный статус воспроизведения напрямую из звукового объекта
+            const status = await soundRef.current.getStatusAsync();
+
+            if (status.isLoaded && status.isPlaying) {
+                // Если играет - ставим на паузу
+                console.log('Ставим на паузу из уведомления');
                 await pausePlayback();
-            } else {
+            } else if (status.isLoaded && !status.isPlaying) {
+                // Если на паузе - возобновляем
+                console.log('Возобновляем воспроизведение из уведомления');
                 await resumePlayback();
+            } else {
+                console.warn('Неожиданное состояние аудио:', status);
             }
         } catch (error) {
             console.error('Ошибка переключения воспроизведения:', error);

@@ -148,25 +148,6 @@ export class NotificationService {
 
       // Пытаемся получить изображение из эпизода
       const episodeImageUrl = this.getEpisodeImageUrl(episode);
-      const imageUrl = episodeImageUrl || fallbackImageUrl;
-
-      // Добавляем изображение, если URL найден
-      if (imageUrl) {
-        try {
-          console.log('Добавляем изображение в уведомление:', imageUrl);
-          content.attachments = [
-            {
-              url: imageUrl,
-              options: {
-                typeHint: 'public.jpeg',
-              },
-            },
-          ];
-        } catch (error) {
-          console.error('Ошибка добавления изображения к уведомлению:', error);
-          // Продолжаем без изображения
-        }
-      }
 
       // Используем фиксированный ID без предварительной очистки
       // Android автоматически заменит предыдущее уведомление с тем же ID
