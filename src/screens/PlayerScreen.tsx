@@ -34,39 +34,31 @@ const PlayerScreen: React.FC = () => {
 
     const fetchShowDetails = async () => {
         try {
-            console.log('show.id =', show.id)
             const response = await fetch(
                 `https://services.err.ee/api/v2/radioAppContent/getContentPageData?contentId=${show.id}`
             );
             const jsonResponse = await response.json();
-            // Сохраняем в локальном состоянии компонента
             setShowDetails(jsonResponse.data);
-
-            // Передаем данные о передаче в аудио контекст
             setAudioShowDetails(jsonResponse.data);
 
-            // Проверяем, есть ли эпизоды
             if (!jsonResponse.data.episodeList || jsonResponse.data.episodeList.length === 0) {
-                console.log('Список эпизодов пуст');
+                console.log('List of episodes is empty');
                 return;
             }
-
-            // Автоматическое воспроизведение первого доступного эпизода
             const playableEpisode = jsonResponse.data.episodeList.find(episode =>
                 (episode.medias && episode.medias.length > 0) ||
                 (episode.clips && episode.clips.length > 0)
             );
 
             if (playableEpisode) {
-                console.log('Найден воспроизводимый эпизод:', playableEpisode.heading);
-                // Передаем данные о передаче вместе с эпизодом
+                console.log('Found playing episode:', playableEpisode.heading);
                 await playEpisode(playableEpisode, jsonResponse.data);
             } else {
-                console.log('Воспроизводимые эпизоды не найдены');
+                console.log('Playing episodes are not found');
             }
 
         } catch (error) {
-            console.error('Ошибка загрузки деталей передачи:', error);
+            console.error('Error loading show\'s details:', error);
         } finally {
             setLoading(false);
         }
@@ -79,16 +71,14 @@ const PlayerScreen: React.FC = () => {
     };
 
     /**
-     * Преобразует timestamp (эпохи) в формат dd.MM.YYYY HH:mm
-     * @param timestamp - время в миллисекундах или секундах с 1 января 1970 года
-     * @returns отформатированная строка даты
+     * Transform timestamp (epochs) to dd.MM.YYYY HH:mm format
+     * @param timestamp - time in milliseconds or seconds starting from 1 january 1970 year
+     * @returns formatted date string
      */
     const formatDateFromEpoch = (timestamp: number): string => {
         if (!timestamp || isNaN(timestamp)) {
             return 'Дата не указана';
         }
-
-        // Если timestamp в секундах (меньше 13 цифр), конвертируем в миллисекунды
         const timestampMs = timestamp.toString().length <= 10
             ? timestamp * 1000
             : timestamp;
@@ -108,20 +98,17 @@ const PlayerScreen: React.FC = () => {
 
             return `${day}.${month}.${year} ${hours}:${minutes}`;
         } catch (error) {
-            console.error('Ошибка форматирования даты:', error);
-            return 'Ошибка даты';
+            console.error('Error date formatting:', error);
+            return 'Date error';
         }
     };
 
     const formatDate = (dateString: string) => {
-        // Если это уже timestamp, используем новую функцию
         if (typeof dateString === 'number' || /^\d+$/.test(dateString)) {
             return formatDateFromEpoch(Number(dateString));
         }
-
-        // Если это строка даты, используем старый метод
         const date = new Date(dateString);
-        return date.toLocaleDateString('ru-RU', {
+        return date.toLocaleDateString('en-EN', {
             day: '2-digit',
             month: '2-digit',
             year: 'numeric',
@@ -142,8 +129,6 @@ const PlayerScreen: React.FC = () => {
             </View>
         );
     }
-
-    // Проверяем, есть ли данные о передаче
     if (!showDetails) {
         return (
             <View style={styles.errorContainer}>
@@ -153,8 +138,6 @@ const PlayerScreen: React.FC = () => {
             </View>
         );
     }
-
-    // Проверяем, есть ли список эпизодов и не пустой ли он
     if (!showDetails.episodeList || showDetails.episodeList.length === 0) {
         return (
             <View style={styles.errorContainer}>
@@ -164,8 +147,6 @@ const PlayerScreen: React.FC = () => {
             </View>
         );
     }
-
-    // Проверяем, есть ли доступные для воспроизведения эпизоды
     const playableEpisodes = showDetails.episodeList.filter(episode =>
         (episode.medias && episode.medias.length > 0) ||
         (episode.clips && episode.clips.length > 0)
@@ -180,8 +161,6 @@ const PlayerScreen: React.FC = () => {
             </View>
         );
     }
-
-    // Проверка на ошибки аудио
     if (state.error) {
         return (
             <View style={styles.errorContainer}>
@@ -189,7 +168,6 @@ const PlayerScreen: React.FC = () => {
                 <TouchableOpacity
                     style={styles.retryButton}
                     onPress={() => {
-                        // Повторная попытка загрузки эпизода
                         if (showDetails && showDetails.episodeList && showDetails.episodeList.length > 0) {
                             const playableEpisode = showDetails.episodeList.find(episode =>
                                 (episode.medias && episode.medias.length > 0) ||
@@ -208,7 +186,7 @@ const PlayerScreen: React.FC = () => {
     }
 
     /**
-     * Декодирует Unicode escape последовательности (например, \u003C в <)
+     * Decodes Unicode escape sequence (ex., \u003C в <)
      */
     const decodeUnicodeEscapes = (str: string): string => {
         if (!str) return '';
@@ -219,7 +197,7 @@ const PlayerScreen: React.FC = () => {
     };
 
     /**
-     * Декодирует HTML entities (например, &lt; в <, &amp; в &)
+     * Decodes HTML entities (ex., &lt; в <, &amp; в &)
      */
     const decodeHtmlEntities = (str: string): string => {
         if (!str) return '';
@@ -250,48 +228,37 @@ const PlayerScreen: React.FC = () => {
     };
 
     /**
-     * Удаляет HTML теги и оставляет только текстовое содержимое
+     * Removes HTML tags and leaves only text content
      */
     const stripHtmlTags = (str: string): string => {
         if (!str) return '';
 
         return str
-        // Удаляем HTML теги, но сохраняем их содержимое
             .replace(/<[^>]+>/g, '')
-            // Заменяем множественные пробелы на одинарные
             .replace(/\s+/g, ' ')
-            // Убираем пробелы в начале и конце
             .trim();
     };
 
     /**
-     * Полная очистка и декодирование HTML строки
+     * Full purge and decoding of HTML string
      */
     const cleanHtmlText = (str: string): string => {
         if (!str || typeof str !== 'string') return '';
-
-        // Шаг 1: Декодируем Unicode escape последовательности
         let cleaned = decodeUnicodeEscapes(str);
-
-        // Шаг 2: Декодируем HTML entities
         cleaned = decodeHtmlEntities(cleaned);
-
-        // Шаг 3: Удаляем HTML теги
         cleaned = stripHtmlTags(cleaned);
 
         return cleaned;
     };
 
     /**
-     * Получает очищенное описание из объекта передачи
+     * Receives purge content of show's object
      */
     const getCleanDescription = (show: any): string | null => {
         if (!show) return null;
 
         const lead = show.lead ? cleanHtmlText(show.lead) : '';
         const body = show.body ? cleanHtmlText(show.body) : '';
-
-        // Возвращаем lead, если он не пустой, иначе body
         const description = lead || body;
 
         return description && description.trim() !== '' ? description : null;
@@ -303,17 +270,14 @@ const PlayerScreen: React.FC = () => {
     return (
         <ScrollView style={styles.container}>
             <View style={styles.playerContainer}>
-                {/* Изображение эпизода */}
                 <Image
                     source={{ uri: currentShow.rootContent.squarePhotos.length > 0 ? currentShow.rootContent.squarePhotos[0].photoTypes[4].url : currentEpisode.photos[0].photoTypes[4].url }}
                     style={styles.episodeImage}
                     resizeMode="cover"
                 />
 
-                {/* Заголовок */}
                 <Text style={styles.episodeHeading}>{currentEpisode.heading}</Text>
 
-                {/* Прогресс-бар */}
                 <View style={styles.progressContainer}>
                     <Text style={styles.timeText}>
                         {formatTime(state.currentTime)}
@@ -333,7 +297,6 @@ const PlayerScreen: React.FC = () => {
                     </Text>
                 </View>
 
-                {/* Кнопка воспроизведения/паузы */}
                 <TouchableOpacity
                     style={styles.playButton}
                     onPress={togglePlayPause}
@@ -348,7 +311,6 @@ const PlayerScreen: React.FC = () => {
                     )}
                 </TouchableOpacity>
 
-                {/* Описание */}
                 {(() => {
                     const description = getCleanDescription(currentShow);
                     return description ? (
@@ -360,7 +322,6 @@ const PlayerScreen: React.FC = () => {
                     ) : null;
                 })()}
 
-                {/* Дата */}
                 <Text style={styles.dateText}>
                     {formatDate(currentEpisode.publicStart)}
                 </Text>

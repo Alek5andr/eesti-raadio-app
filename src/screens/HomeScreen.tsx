@@ -34,13 +34,11 @@ const HomeScreen: React.FC = () => {
                 'https://services.err.ee/api/v2/radio/getByUrl?domain=eesti-raadio.err.ee&url=app'
             );
             const jsonResponse = await response.json();
-
-            // Группировка передач по категориям
             const groupedData: Category[] = jsonResponse.data.category.frontPage || [];
 
             setCategories(groupedData);
         } catch (error) {
-            console.error('Ошибка загрузки передач:', error);
+            console.error('Error shows loading:', error);
         } finally {
             setLoading(false);
         }
@@ -51,13 +49,7 @@ const HomeScreen: React.FC = () => {
     };
 
     const renderShow = (show: Show) => {
-        // теперь renderShow использует обычный return вместо стрелочной функции с немедленным возвратом
-
-        // Безопасный доступ к изображению
         const imageUrl = show.photos?.[0]?.photoTypes?.[36]?.url;
-        /*if (imageUrl) {
-            console.log('Image URL:', imageUrl);
-        }*/
 
         return (
             <TouchableOpacity

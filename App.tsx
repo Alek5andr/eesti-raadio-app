@@ -15,7 +15,6 @@ export type RootStackParamList = {
 
 const Stack = createStackNavigator<RootStackParamList>();
 
-// Конфигурация уведомлений
 Notifications.setNotificationHandler({
     handleNotification: async () => ({
         shouldShowAlert: true,
@@ -26,7 +25,6 @@ Notifications.setNotificationHandler({
 
 export default function App() {
     useEffect(() => {
-        // Запрос разрешений на уведомления
         const requestPermissions = async () => {
             const { status } = await Notifications.getPermissionsAsync();
             if (status !== 'granted') {

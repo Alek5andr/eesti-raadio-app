@@ -56,5 +56,4 @@ export interface AudioState {
     currentEpisode: Episode | null;
     isLoading: boolean;
     showDetails: any | null;
-    error: string | null; // Добавьте это поле
-}
+    error: string | null;}
