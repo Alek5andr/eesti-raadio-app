@@ -77,7 +77,7 @@ const PlayerScreen: React.FC = () => {
      */
     const formatDateFromEpoch = (timestamp: number): string => {
         if (!timestamp || isNaN(timestamp)) {
-            return 'Дата не указана';
+            return 'Date is missing';
         }
         const timestampMs = timestamp.toString().length <= 10
             ? timestamp * 1000
@@ -87,7 +87,7 @@ const PlayerScreen: React.FC = () => {
             const date = new Date(timestampMs);
 
             if (isNaN(date.getTime())) {
-                return 'Некорректная дата';
+                return 'Incorrect date';
             }
 
             const day = date.getDate().toString().padStart(2, '0');
@@ -125,7 +125,7 @@ const PlayerScreen: React.FC = () => {
         return (
             <View style={styles.loadingContainer}>
                 <ActivityIndicator size="large" color="#0066cc" />
-                <Text style={styles.loadingText}>Загрузка эпизода...</Text>
+                <Text style={styles.loadingText}>Episode loading...</Text>
             </View>
         );
     }
@@ -133,7 +133,7 @@ const PlayerScreen: React.FC = () => {
         return (
             <View style={styles.errorContainer}>
                 <Text style={styles.errorText}>
-                    Ошибка загрузки данных о передаче
+                    Error loading show data
                 </Text>
             </View>
         );
@@ -142,7 +142,7 @@ const PlayerScreen: React.FC = () => {
         return (
             <View style={styles.errorContainer}>
                 <Text style={styles.errorText}>
-                    На данный момент эпизодов нет
+                    There are currently no episodes
                 </Text>
             </View>
         );
@@ -156,7 +156,7 @@ const PlayerScreen: React.FC = () => {
         return (
             <View style={styles.errorContainer}>
                 <Text style={styles.errorText}>
-                    На данный момент эпизодов нет
+                    There are currently no episodes
                 </Text>
             </View>
         );
@@ -179,7 +179,7 @@ const PlayerScreen: React.FC = () => {
                         }
                     }}
                 >
-                    <Text style={styles.retryButtonText}>Повторить</Text>
+                    <Text style={styles.retryButtonText}>Retry</Text>
                 </TouchableOpacity>
             </View>
         );
