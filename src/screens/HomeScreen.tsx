@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
     View,
     Text,
@@ -9,10 +9,12 @@ import {
     StyleSheet,
     Dimensions,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../../App';
-import { Show, Category } from '../types';
+import { Show, Category, Episode } from '../types';
+import { useAudio } from '../contexts/AudioContext';
+import PlaybackHistoryComponent from '../components/PlaybackHistoryComponent';
 
 type HomeScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Home'>;
 
@@ -22,11 +24,22 @@ const itemWidth = width * 0.4;
 const HomeScreen: React.FC = () => {
     const [categories, setCategories] = useState<Category[]>([]);
     const [loading, setLoading] = useState(true);
+    const [historyKey, setHistoryKey] = useState(0); // Для принудительного обновления истории
     const navigation = useNavigation<HomeScreenNavigationProp>();
+    const { playEpisode } = useAudio();
 
     useEffect(() => {
+        console.log('HomeScreen useEffect begins')
         fetchShows();
+        console.log('HomeScreen useEffect ends')
     }, []);
+
+    // Обновляем историю при фокусе на экран
+    useFocusEffect(
+        useCallback(() => {
+            setHistoryKey(prev => prev + 1); // Принудительно обновляем компонент истории
+        }, [])
+    );
 
     const fetchShows = async () => {
         try {
@@ -50,14 +63,26 @@ const HomeScreen: React.FC = () => {
         navigation.navigate('Player', { show });
     };
 
-    const renderShow = (show: Show) => {
-        // теперь renderShow использует обычный return вместо стрелочной функции с немедленным возвратом
+    // Обработчик нажатия на эпизод из истории
+    const handleHistoryEpisodePress = async (episode: Episode, showDetails?: any) => {
+        try {
+            if (showDetails) {
+                // Если есть сохраненные данные о передаче, используем их
+                await playEpisode(episode, showDetails);
+            } else {
+                // Если нет данных о передаче, пытаемся их получить
+                console.warn('Нет данных о передаче для эпизода:', episode.heading);
+                // Здесь можно было бы попытаться найти передачу по ID эпизода,
+                // но это потребует дополнительных API вызовов
+            }
+        } catch (error) {
+            console.error('Ошибка воспроизведения эпизода из истории:', error);
+        }
+    };
 
+    const renderShow = (show: Show) => {
         // Безопасный доступ к изображению
         const imageUrl = show.photos?.[0]?.photoTypes?.[36]?.url;
-        /*if (imageUrl) {
-            console.log('Image URL:', imageUrl);
-        }*/
 
         return (
             <TouchableOpacity
@@ -74,7 +99,7 @@ const HomeScreen: React.FC = () => {
                     {show.heading}
                 </Text>
             </TouchableOpacity>
-        )
+        );
     };
 
     const renderCategory = (category: Category) => (
@@ -101,6 +126,13 @@ const HomeScreen: React.FC = () => {
 
     return (
         <ScrollView style={styles.container}>
+            {/* Компонент истории воспроизведения */}
+            <PlaybackHistoryComponent
+                key={historyKey}
+                onEpisodePress={handleHistoryEpisodePress}
+            />
+
+            {/* Категории передач */}
             {categories.map(renderCategory)}
         </ScrollView>
     );

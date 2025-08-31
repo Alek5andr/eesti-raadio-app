@@ -26,15 +26,22 @@ Notifications.setNotificationHandler({
 
 export default function App() {
     useEffect(() => {
-        // Запрос разрешений на уведомления
+        console.log('App useEffect begins')
+        // Запрос разрешений на уведомления - НЕ БЛОКИРУЕМ
         const requestPermissions = async () => {
-            const { status } = await Notifications.getPermissionsAsync();
-            if (status !== 'granted') {
-                await Notifications.requestPermissionsAsync();
+            try {
+                const { status } = await Notifications.getPermissionsAsync();
+                if (status !== 'granted') {
+                    await Notifications.requestPermissionsAsync();
+                }
+            } catch (error) {
+                console.error('Ошибка запроса разрешений:', error);
             }
         };
 
+        // Выполняем асинхронно, не блокируя UI
         requestPermissions();
+        console.log('App useEffect ends')
     }, []);
 
     return (

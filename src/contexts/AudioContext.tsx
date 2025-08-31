@@ -61,15 +61,16 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const [state, dispatch] = useReducer(audioReducer, initialState);
     const soundRef = useRef<Audio.Sound | null>(null);
     const notificationService = useRef<NotificationService>(NotificationService.getInstance());
-    const updateIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const isInitialized = useRef<boolean>(false);
+    const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-    // Инициализация аудио
+    // Инициализация аудио - УПРОЩЕННАЯ ВЕРСИЯ
     useEffect(() => {
+        console.log(`${new Date()} - AudioContext audio useEffect begins`)
         const initAudio = async () => {
-            try {
-                if (isInitialized.current) return;
+            if (isInitialized.current) return;
 
+            try {
                 console.log('Инициализация аудио...');
 
                 await Audio.setAudioModeAsync({
@@ -81,10 +82,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 });
 
                 // Настройка уведомлений
-                const notificationSetupSuccess = await notificationService.current.setupNotifications();
-                if (!notificationSetupSuccess) {
-                    console.warn('Не удалось настроить уведомления');
-                }
+                await notificationService.current.setupNotifications();
 
                 // Настройка обработчиков уведомлений
                 const removeListeners = notificationService.current.setupNotificationListeners(
@@ -95,13 +93,15 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                         try {
                             await togglePlayPause();
                         } catch (error) {
-                            console.error('Ошибка при переключении воспроизведения из уведомления:', error);
+                            console.error('Ошибка при переключении из уведомления:', error);
                         }
                     }
                 );
 
-                // Восстановление состояния при запуске
-                await restorePlaybackState();
+                // Восстановление состояния - НЕ БЛОКИРУЕМ UI
+                restorePlaybackState().catch(error => {
+                    console.error('Ошибка восстановления состояния:', error);
+                });
 
                 isInitialized.current = true;
                 console.log('Аудио инициализировано успешно');
@@ -116,49 +116,45 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
         let removeListeners: (() => void) | undefined;
 
-        initAudio()
-            .then((cleanup) => {
-                removeListeners = cleanup;
-            })
-            .catch((error) => {
-                console.error('Критическая ошибка инициализации:', error);
-            });
+        initAudio().then((cleanup) => {
+            removeListeners = cleanup;
+        });
 
         // Обработка изменения состояния приложения
-        const handleAppStateChange = async (nextAppState: AppStateStatus) => {
-            try {
-                if (nextAppState === 'background' || nextAppState === 'inactive') {
-                    // Сохранение состояния при переходе в фон
-                    if (state.currentEpisode && soundRef.current) {
-                        await StorageService.savePlaybackState(state.currentEpisode, state.currentTime);
-                    }
+        const handleAppStateChange = (nextAppState: AppStateStatus) => {
+            if (nextAppState === 'background' || nextAppState === 'inactive') {
+                // Сохранение состояния при переходе в фон - НЕ БЛОКИРУЕМ
+                if (state.currentEpisode && state.currentTime > 0) {
+                    StorageService.savePlaybackState(
+                        state.currentEpisode,
+                        state.currentTime,
+                        state.showDetails
+                    ).catch(error => {
+                        console.error('Ошибка сохранения в фоне:', error);
+                    });
                 }
-            } catch (error) {
-                console.error('Ошибка при изменении состояния приложения:', error);
             }
         };
 
         const appStateSubscription = AppState.addEventListener('change', handleAppStateChange);
+        console.log(`${new Date()} - AudioContext audio useEffect ends`)
 
+        console.log('AudioContext audio return useEffect begins')
         return () => {
             console.log('Очистка аудио контекста...');
 
-            // Очистка звука
-            if (soundRef.current) {
-                soundRef.current.unloadAsync().catch((error) => {
-                    console.error('Ошибка выгрузки звука:', error);
-                });
+            // Очистка таймера
+            if (saveTimeoutRef.current) {
+                clearTimeout(saveTimeoutRef.current);
             }
 
-            // Очистка интервала
-            if (updateIntervalRef.current) {
-                clearInterval(updateIntervalRef.current);
+            // Очистка звука
+            if (soundRef.current) {
+                soundRef.current.unloadAsync().catch(console.error);
             }
 
             // Очистка уведомлений
-            notificationService.current.hidePlayerNotification().catch((error) => {
-                console.error('Ошибка скрытия уведомления:', error);
-            });
+            notificationService.current.hidePlayerNotification().catch(console.error);
 
             // Очистка слушателей
             if (removeListeners) {
@@ -171,8 +167,10 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
             appStateSubscription?.remove();
             isInitialized.current = false;
+
+            console.log('AudioContext audio return useEffect ends')
         };
-    }, []); // Убираем зависимости чтобы избежать повторной инициализации
+    }, []); // БЕЗ ЗАВИСИМОСТЕЙ!
 
     // Функция для получения URL изображения
     const getImageUrl = (episode: Episode, showDetails: any): string | undefined => {
@@ -189,31 +187,12 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
     };
 
-    // Обновление уведомлений при изменении состояния
+    // Обновление уведомлений - ДЕБАУНСИНГ
     useEffect(() => {
-        if (state.currentEpisode && (state.duration > 0 || state.isPlaying)) {
-            try {
-                const imageUrl = getImageUrl(state.currentEpisode, state.showDetails);
-                notificationService.current.showPlayerNotification(
-                    state.currentEpisode,
-                    state.isPlaying,
-                    state.currentTime,
-                    state.duration,
-                    imageUrl
-                ).catch((error) => {
-                    console.error('Ошибка показа уведомления:', error);
-                });
-            } catch (error) {
-                console.error('Ошибка при обновлении уведомления:', error);
-            }
-        }
-    }, [state.isPlaying, state.currentEpisode, state.showDetails]);
-
-    useEffect(() => {
-        // Обновляем время в уведомлении каждую 1 секунду
-        if (state.currentEpisode && state.isPlaying && state.duration > 0) {
-            const seconds = Math.floor(state.currentTime / 1000);
-            if (seconds % 1 === 0) {
+        console.log(`${new Date()} - AudioContext notification useEffect begins`)
+        if (state.currentEpisode && state.isPlaying) {
+            // Обновляем уведомление не чаще чем раз в секунду
+            const updateNotification = () => {
                 try {
                     const imageUrl = getImageUrl(state.currentEpisode, state.showDetails);
                     notificationService.current.showPlayerNotification(
@@ -222,34 +201,44 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                         state.currentTime,
                         state.duration,
                         imageUrl
-                    ).catch((error) => {
-                        console.error('Ошибка обновления времени в уведомлении:', error);
-                    });
+                    ).catch(console.error);
                 } catch (error) {
-                    console.error('Ошибка при периодическом обновлении уведомления:', error);
+                    console.error('Ошибка обновления уведомления:', error);
                 }
-            }
-        }
-    }, [state.currentTime]);
+            };
 
-    // Сохранение состояния с обработкой ошибок
-    const savePlaybackState = async (episode: Episode, position: number) => {
-        try {
-            await StorageService.savePlaybackState(episode, position);
-        } catch (error) {
-            console.error('Ошибка сохранения состояния воспроизведения:', error);
+            updateNotification();
         }
+        console.log(`${new Date()} - AudioContext notification useEffect ends`)
+    }, [state.isPlaying, state.currentEpisode]); // Убираем частые обновления
+
+    // Сохранение состояния с дебаунсингом
+    const savePlaybackState = (episode: Episode, position: number) => {
+        // Очищаем предыдущий таймер
+        if (saveTimeoutRef.current) {
+            clearTimeout(saveTimeoutRef.current);
+        }
+
+        // Сохраняем через 2 секунды после последнего обновления
+        saveTimeoutRef.current = setTimeout(() => {
+            StorageService.savePlaybackState(episode, position, state.showDetails)
+                .catch(error => {
+                    console.error('Ошибка сохранения состояния:', error);
+                });
+        }, 2000);
     };
 
-    // Восстановление состояния с обработкой ошибок
+    // Восстановление состояния - НЕ БЛОКИРУЮЩЕЕ
     const restorePlaybackState = async () => {
         try {
             const playbackState = await StorageService.getPlaybackState();
-
             if (playbackState) {
-                const { episode, position } = playbackState;
+                const { episode, position, showDetails } = playbackState;
                 dispatch({ type: 'SET_EPISODE', payload: episode });
                 dispatch({ type: 'SET_TIME', payload: position });
+                if (showDetails) {
+                    dispatch({ type: 'SET_SHOW_DETAILS', payload: showDetails });
+                }
                 console.log('Состояние воспроизведения восстановлено');
             }
         } catch (error) {
@@ -257,52 +246,56 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
     };
 
-    // Обработчик статуса воспроизведения с улучшенной обработкой ошибок
+    // Обработчик статуса воспроизведения - УПРОЩЕННЫЙ
     const onPlaybackStatusUpdate = (status: AVPlaybackStatus) => {
-        try {
-            if (status.isLoaded) {
-                dispatch({ type: 'SET_TIME', payload: status.positionMillis || 0 });
-                dispatch({ type: 'SET_DURATION', payload: status.durationMillis || 0 });
-                dispatch({ type: 'SET_PLAYING', payload: status.isPlaying });
-                dispatch({ type: 'SET_LOADING', payload: status.isBuffering });
-                dispatch({ type: 'SET_ERROR', payload: null }); // Очищаем ошибку при успешном статусе
+        // Используем setTimeout вместо requestAnimationFrame для менее частых обновлений
+        setTimeout(() => {
+            try {
+                if (status.isLoaded) {
+                    // Обновляем состояние пачками для меньшего количества рендеров
+                    dispatch({ type: 'SET_TIME', payload: status.positionMillis || 0 });
+                    dispatch({ type: 'SET_DURATION', payload: status.durationMillis || 0 });
+                    dispatch({ type: 'SET_PLAYING', payload: status.isPlaying });
 
-                // Периодическое сохранение позиции
-                if (state.currentEpisode && status.positionMillis && status.isPlaying) {
-                    savePlaybackState(state.currentEpisode, status.positionMillis);
+                    // Загрузку и ошибку обновляем только если изменились
+                    if (state.isLoading !== status.isBuffering) {
+                        dispatch({ type: 'SET_LOADING', payload: status.isBuffering });
+                    }
+                    if (state.error !== null) {
+                        dispatch({ type: 'SET_ERROR', payload: null });
+                    }
+
+                    // Сохранение позиции с дебаунсингом
+                    if (state.currentEpisode && status.positionMillis && status.isPlaying) {
+                        savePlaybackState(state.currentEpisode, status.positionMillis);
+                    }
+                } else if (!status.isLoaded && status.error) {
+                    console.error('Ошибка воспроизведения:', status.error);
+                    dispatch({ type: 'SET_ERROR', payload: 'Ошибка воспроизведения аудио' });
+                    dispatch({ type: 'SET_PLAYING', payload: false });
+                    dispatch({ type: 'SET_LOADING', payload: false });
                 }
-            } else if (!status.isLoaded && status.error) {
-                console.error('Ошибка воспроизведения:', status.error);
-                dispatch({ type: 'SET_ERROR', payload: 'Ошибка воспроизведения аудио' });
-                dispatch({ type: 'SET_PLAYING', payload: false });
-                dispatch({ type: 'SET_LOADING', payload: false });
+            } catch (error) {
+                console.error('Ошибка в обработчике статуса:', error);
             }
-        } catch (error) {
-            console.error('Ошибка в обработчике статуса воспроизведения:', error);
-        }
+        }, 0);
     };
 
     const getStreamUrl = (episode: Episode): string | null => {
         try {
             const extractUrl = (srcObj: any): string | null => {
                 if (!srcObj) return null;
-
-                if (srcObj.file) {
-                    return `https:${srcObj.file}`;
-                } else if (srcObj.hls) {
-                    return `https:${srcObj.hls}`;
-                } else if (srcObj.hls2) {
-                    return `https:${srcObj.hls2}`;
-                } else if (srcObj.hlsNew) {
-                    return `https:${srcObj.hlsNew}`;
-                }
+                if (srcObj.file) return `https:${srcObj.file}`;
+                if (srcObj.hls) return `https:${srcObj.hls}`;
+                if (srcObj.hls2) return `https:${srcObj.hls2}`;
+                if (srcObj.hlsNew) return `https:${srcObj.hlsNew}`;
                 return null;
             };
 
             // Проверяем medias
             if (episode.medias && episode.medias.length > 0) {
                 const media = episode.medias[0];
-                if (media && media.src) {
+                if (media?.src) {
                     const url = extractUrl(media.src);
                     if (url) return url;
                 }
@@ -311,9 +304,9 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             // Проверяем clips
             if (episode.clips && episode.clips.length > 0) {
                 const clip = episode.clips[0];
-                if (clip && clip.medias && clip.medias.length > 0) {
+                if (clip?.medias && clip.medias.length > 0) {
                     const clipMedia = clip.medias[0];
-                    if (clipMedia && clipMedia.src) {
+                    if (clipMedia?.src) {
                         const url = extractUrl(clipMedia.src);
                         if (url) return url;
                     }
@@ -329,18 +322,11 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     const playEpisode = async (episode: Episode, showDetails?: any) => {
         try {
-            console.log('Начинаем воспроизведение эпизода:', episode.heading);
+            console.log(`${new Date()} - Начинаем воспроизведение эпизода: ${episode.heading}`);
             dispatch({ type: 'SET_LOADING', payload: true });
+            // Даем время UI показать состояние загрузки
+            await new Promise(resolve => setTimeout(resolve, 100));
             dispatch({ type: 'SET_ERROR', payload: null });
-
-            // Очищаем только при смене эпизода
-            if (!state.currentEpisode || state.currentEpisode.id !== episode.id) {
-                try {
-                    await notificationService.current.clearBeforeNewEpisode();
-                } catch (error) {
-                    console.error('Ошибка очистки уведомлений:', error);
-                }
-            }
 
             // Сохраняем данные о передаче
             if (showDetails) {
@@ -353,9 +339,9 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 throw new Error('Поток не найден или недоступен');
             }
 
-            console.log('URL потока:', streamUrl);
+            console.log(`${new Date()} - URL потока найден`);
 
-            // Выгрузка предыдущего звука только если это другой эпизод
+            // Выгрузка предыдущего звука если это другой эпизод
             if (soundRef.current && (!state.currentEpisode || state.currentEpisode.id !== episode.id)) {
                 try {
                     await soundRef.current.unloadAsync();
@@ -372,7 +358,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                         { uri: streamUrl },
                         {
                             shouldPlay: true,
-                            progressUpdateIntervalMillis: 1000, // Обновляем прогресс каждую секунду
+                            progressUpdateIntervalMillis: 1000, // Обновляем каждую секунду, не чаще
                             positionMillis: 0
                         },
                         onPlaybackStatusUpdate
@@ -381,16 +367,23 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                     soundRef.current = sound;
                     dispatch({ type: 'SET_EPISODE', payload: episode });
 
-                    // Восстановление позиции если это тот же эпизод
-                    const playbackState = await StorageService.getPlaybackState();
-                    if (playbackState && playbackState.episode.id === episode.id && playbackState.position > 0) {
-                        try {
-                            await sound.setPositionAsync(playbackState.position);
-                            console.log('Позиция восстановлена:', playbackState.position);
-                        } catch (error) {
-                            console.error('Ошибка восстановления позиции:', error);
-                        }
-                    }
+                    // Восстановление позиции для этого эпизода - НЕ БЛОКИРУЮЩЕЕ
+                    StorageService.getEpisodePosition(episode.id)
+                        .then(episodeData => {
+                            if (episodeData && episodeData.position > 0 && soundRef.current) {
+                                soundRef.current.setPositionAsync(episodeData.position)
+                                    .then(() => {
+                                        console.log(`Позиция восстановлена для эпизода ${episode.id}:`, Math.floor(episodeData.position / 1000) + 'с');
+                                    })
+                                    .catch(error => {
+                                        console.error('Ошибка восстановления позиции:', error);
+                                    });
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Ошибка получения сохраненной позиции:', error);
+                        });
+
                 } catch (error) {
                     console.error('Ошибка создания звука:', error);
                     throw new Error('Не удалось загрузить аудиофайл');
@@ -398,16 +391,11 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             } else {
                 // Если тот же эпизод, просто возобновляем воспроизведение
                 if (soundRef.current) {
-                    try {
-                        await soundRef.current.playAsync();
-                    } catch (error) {
-                        console.error('Ошибка возобновления воспроизведения:', error);
-                        throw error;
-                    }
+                    await soundRef.current.playAsync();
                 }
             }
 
-            console.log('Эпизод успешно запущен');
+            console.log(`${new Date()} - Эпизод успешно запущен`);
         } catch (error) {
             console.error('Ошибка воспроизведения:', error);
             dispatch({ type: 'SET_ERROR', payload: 'Не удалось воспроизвести эпизод' });
@@ -461,16 +449,13 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 return;
             }
 
-            // Получаем актуальный статус воспроизведения напрямую из звукового объекта
             const status = await soundRef.current.getStatusAsync();
 
             if (status.isLoaded && status.isPlaying) {
-                // Если играет - ставим на паузу
-                console.log('Ставим на паузу из уведомления');
+                console.log('Ставим на паузу');
                 await pausePlayback();
             } else if (status.isLoaded && !status.isPlaying) {
-                // Если на паузе - возобновляем
-                console.log('Возобновляем воспроизведение из уведомления');
+                console.log('Возобновляем воспроизведение');
                 await resumePlayback();
             } else {
                 console.warn('Неожиданное состояние аудио:', status);

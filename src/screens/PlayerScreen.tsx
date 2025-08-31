@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, {useState, useEffect, useMemo, memo, useCallback} from 'react';
 import {
     View,
     Text,
@@ -18,6 +18,10 @@ import { useAudio } from '../contexts/AudioContext';
 
 type PlayerScreenRouteProp = RouteProp<RootStackParamList, 'Player'>;
 
+// Мемоизируем тяжелые компоненты
+const MemoizedSlider = memo(Slider);
+const MemoizedImage = memo(Image);
+
 const { width } = Dimensions.get('window');
 const imageSize = width * 0.6;
 
@@ -26,48 +30,74 @@ const PlayerScreen: React.FC = () => {
     const { show } = route.params;
     const { state, playEpisode, togglePlayPause, seekTo, setShowDetails: setAudioShowDetails } = useAudio();
     const [showDetails, setShowDetails] = useState<ShowDetails | null>(null);
-    const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(true);// Мемоизация тяжелых вычислений
+    const memoizedCurrentShow = useMemo(() => showDetails?.mainContent, [showDetails?.mainContent]);
+    const memoizedCurrentEpisode = useMemo(() =>
+        state.currentEpisode || showDetails?.episodeList?.[0],
+        [state.currentEpisode, showDetails?.episodeList]
+    );
 
     useEffect(() => {
-        fetchShowDetails();
+        console.log(`${new Date()} - PlayerScreen useEffect begins`)
+        // Используем setTimeout для разделения операций по фреймам
+        const loadData = async () => {
+            try {
+                setLoading(true);
+
+                // Сначала показываем базовый UI
+                await new Promise(resolve => setTimeout(resolve, 50));
+
+                await fetchShowDetails();
+            } catch (error) {
+                console.error('Ошибка загрузки:', error);
+            }
+        };
+
+        loadData();
+        console.log(`${new Date()} - PlayerScreen useEffect ends`)
     }, [show.id]);
 
     const fetchShowDetails = async () => {
         try {
-            console.log('show.id =', show.id)
+            console.log(`${new Date()} - show.id = ${show.id}`)
+
             const response = await fetch(
                 `https://services.err.ee/api/v2/radioAppContent/getContentPageData?contentId=${show.id}`
             );
             const jsonResponse = await response.json();
-            // Сохраняем в локальном состоянии компонента
+
+            // ВАЖНО: Сначала показываем UI данные
             setShowDetails(jsonResponse.data);
-
-            // Передаем данные о передаче в аудио контекст
             setAudioShowDetails(jsonResponse.data);
+            setLoading(false); // Убираем загрузку СРАЗУ после получения данных
 
-            // Проверяем, есть ли эпизоды
-            if (!jsonResponse.data.episodeList || jsonResponse.data.episodeList.length === 0) {
-                console.log('Список эпизодов пуст');
-                return;
+            // Принудительно рендерим UI
+            await new Promise(resolve => {
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(resolve); // Двойной RAF для гарантии
+                });
+            });
+
+            // Только ПОСЛЕ рендера UI запускаем аудио
+            if (jsonResponse.data.episodeList && jsonResponse.data.episodeList.length > 0) {
+                const playableEpisode = jsonResponse.data.episodeList.find(episode =>
+                    (episode.medias && episode.medias.length > 0) ||
+                    (episode.clips && episode.clips.length > 0)
+                );
+
+                if (playableEpisode) {
+                    console.log(`${new Date()} - Найден воспроизводимый эпизод: ${playableEpisode.heading}`);
+
+                    // Запускаем аудио в следующем тике
+                    setTimeout(() => {
+                        playEpisode(playableEpisode, jsonResponse.data).catch(error => {
+                            console.error('Ошибка воспроизведения:', error);
+                        });
+                    }, 0);
+                }
             }
-
-            // Автоматическое воспроизведение первого доступного эпизода
-            const playableEpisode = jsonResponse.data.episodeList.find(episode =>
-                (episode.medias && episode.medias.length > 0) ||
-                (episode.clips && episode.clips.length > 0)
-            );
-
-            if (playableEpisode) {
-                console.log('Найден воспроизводимый эпизод:', playableEpisode.heading);
-                // Передаем данные о передаче вместе с эпизодом
-                await playEpisode(playableEpisode, jsonResponse.data);
-            } else {
-                console.log('Воспроизводимые эпизоды не найдены');
-            }
-
         } catch (error) {
             console.error('Ошибка загрузки деталей передачи:', error);
-        } finally {
             setLoading(false);
         }
     };
@@ -130,9 +160,16 @@ const PlayerScreen: React.FC = () => {
         });
     };
 
-    const handleSeek = (value: number) => {
-        seekTo(value);
-    };
+    const handleSeek = useMemo(() => {
+        let seekTimeout: NodeJS.Timeout;
+        return (value: number) => {
+            // Дебаунсинг для перемотки
+            clearTimeout(seekTimeout);
+            seekTimeout = setTimeout(() => {
+                seekTo(value);
+            }, 100);
+        };
+    }, [seekTo]);
 
     if (loading) {
         return (
@@ -144,7 +181,7 @@ const PlayerScreen: React.FC = () => {
     }
 
     // Проверяем, есть ли данные о передаче
-    if (!showDetails) {
+    if (!showDetails || !memoizedCurrentEpisode) {
         return (
             <View style={styles.errorContainer}>
                 <Text style={styles.errorText}>
@@ -297,15 +334,15 @@ const PlayerScreen: React.FC = () => {
         return description && description.trim() !== '' ? description : null;
     };
 
-    const currentShow = showDetails.mainContent
-    const currentEpisode = state.currentEpisode || showDetails.episodeList[0];
+    const currentShow = memoizedCurrentShow;
+    const currentEpisode = memoizedCurrentEpisode;
 
     return (
         <ScrollView style={styles.container}>
             <View style={styles.playerContainer}>
                 {/* Изображение эпизода */}
-                <Image
-                    source={{ uri: currentShow.rootContent.squarePhotos.length > 0 ? currentShow.rootContent.squarePhotos[0].photoTypes[4].url : currentEpisode.photos[0].photoTypes[4].url }}
+                <MemoizedImage
+                    source={{ uri: currentShow?.rootContent?.squarePhotos?.length > 0 ? currentShow.rootContent.squarePhotos[0].photoTypes[4].url : currentEpisode?.photos?.[0]?.photoTypes?.[4]?.url }}
                     style={styles.episodeImage}
                     resizeMode="cover"
                 />
@@ -318,15 +355,16 @@ const PlayerScreen: React.FC = () => {
                     <Text style={styles.timeText}>
                         {formatTime(state.currentTime)}
                     </Text>
-                    <Slider
+                    <MemoizedSlider
                         style={styles.slider}
                         minimumValue={0}
-                        maximumValue={state.duration}
-                        value={state.currentTime}
+                        maximumValue={state.duration || 1} // Избегаем деления на 0
+                        value={Math.min(state.currentTime, state.duration)} // Ограничиваем значение
                         onValueChange={handleSeek}
                         minimumTrackTintColor="#0066cc"
                         maximumTrackTintColor="#ccc"
                         thumbTintColor="#0066cc"
+                        disabled={state.isLoading || !state.duration} // Отключаем если нет длительности
                     />
                     <Text style={styles.timeText}>
                         {formatTime(state.duration)}
@@ -490,4 +528,4 @@ const styles = StyleSheet.create({
     },
 });
 
-export default PlayerScreen;
+export default memo(PlayerScreen);
